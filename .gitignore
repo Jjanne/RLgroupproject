@@ -1,0 +1,16 @@
+# Virtual env
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Mac
+.DS_Store
+
+# Results (optional, you can keep or ignore later)
+results/models/
+results/logs/
+
+# VSCode
+.vscode/
