@@ -6,23 +6,32 @@ In this project, we implemented and compared two reinforcement learning algorith
 
 - Q-learning (off-policy)
 - SARSA (on-policy)
-- Q-learning with an action cost (reward variation)
+- Q-learning with an action cost (reward penalty)
+- Q-learning with a distance-based reward (reward shaping)
 
 The agents are trained on the MountainCar-v0 environment from Gymnasium.
 
 The goal is to learn a policy that allows the car to reach the top of the hill. Since the car does not have enough power to go straight up, it must learn to build momentum by moving back and forth.
 
-The action-cost variation introduces a penalty when the agent accelerates, making the task more challenging and allowing comparison of different reward structures.
+To explore how reward design impacts learning, we introduced two variations:
+- Action cost: adds a penalty when the agent accelerates, making the task harder and encouraging more efficient actions
+- Distance reward: rewards progress toward the goal, helping the agent learn faster by guiding exploration
+
+These variations allow us to compare not only different algorithms, but also how modifying the reward function affects performance.
 
 ## Project Structure
 
 ```
+
 RLgroupproject/
 ├── src/
 │   ├── train_qlearning.py
 │   ├── train_sarsa.py
 │   ├── train_qlearning_action_cost.py
+│   ├── train_qlearning_distance_reward.py
 │   ├── evaluate.py
+│   ├── evaluate_all.py
+│   ├── compare_results.py
 │   ├── plots.py
 │   ├── utils.py
 │   └── wrappers.py
