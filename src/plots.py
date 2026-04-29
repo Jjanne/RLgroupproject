@@ -191,3 +191,4 @@ if __name__ == "__main__":
     plot_comparison()
     plot_all_training_curves()
     plot_trajectory()
+        
