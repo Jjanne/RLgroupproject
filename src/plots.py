@@ -22,7 +22,7 @@ def plot_rewards():
     plt.ylabel("Average reward over 100 episodes")
     plt.grid(True)
     plt.savefig("results/plots/qlearning_rewards.png")
-    plt.show()
+    plt.close()
 
 
 def plot_policy():
@@ -42,11 +42,31 @@ def plot_policy():
     plt.ylabel("Velocity bins")
     plt.colorbar(label="Action: 0=left, 1=no push, 2=right")
     plt.savefig("results/plots/qlearning_policy.png")
-    plt.show()
+    plt.close()
 
     env.close()
 
+def plot_comparison():
+    q_rewards = np.load("results/logs/rewards.npy")
+    sarsa_rewards = np.load("results/logs/sarsa_rewards.npy")
+
+    q_avg = moving_average(q_rewards, window=100)
+    sarsa_avg = moving_average(sarsa_rewards, window=100)
+
+    os.makedirs("results/plots", exist_ok=True)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(q_avg, label="Q-learning")
+    plt.plot(sarsa_avg, label="SARSA")
+    plt.title("Q-learning vs SARSA on MountainCar-v0")
+    plt.xlabel("Episode")
+    plt.ylabel("Average reward over 100 episodes")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("results/plots/qlearning_vs_sarsa.png")
+    plt.close()
 
 if __name__ == "__main__":
     plot_rewards()
     plot_policy()
+    plot_comparison()
