@@ -1,3 +1,17 @@
+"""
+Evaluation of the trained RL agents on MountainCar.
+
+This script runs a trained agent using its Q-table and measures how well it performs.
+
+Instead of learning, the agent follows its learned policy and we track:
+- average reward
+- number of steps per episode
+- success rate (reaching the goal)
+
+This helps us understand how effective the learned policy is,
+and allows us to compare different methods objectively.
+"""
+
 import gymnasium as gym
 import numpy as np
 import pickle
