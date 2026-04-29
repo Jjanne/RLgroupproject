@@ -134,8 +134,60 @@ def plot_all_training_curves():
     plt.savefig("results/plots/all_training_curves.png")
     plt.close()
 
+def get_discrete_state_for_plot(state, env, bins):
+    low = env.observation_space.low
+    high = env.observation_space.high
+
+    scaled = (state - low) / (high - low)
+    discrete = (scaled * bins).astype(int)
+    discrete = np.clip(discrete, 0, bins - 1)
+
+    return tuple(discrete)
+
+def plot_trajectory():
+    env = gym.make("MountainCar-v0")
+
+    with open("results/models/q_table.pkl", "rb") as f:
+        q_table = pickle.load(f)
+
+    bins = np.array([40, 40])
+
+    state, _ = env.reset()
+    discrete_state = get_discrete_state_for_plot(state, env, bins)
+
+    positions = []
+    velocities = []
+
+    done = False
+
+    while not done:
+        positions.append(state[0])
+        velocities.append(state[1])
+
+        action = np.argmax(q_table[discrete_state])
+
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        done = terminated or truncated
+
+        state = next_state
+        discrete_state = get_discrete_state_for_plot(state, env, bins)
+
+    env.close()
+
+    os.makedirs("results/plots", exist_ok=True)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(positions, velocities, marker="o", markersize=2)
+    plt.title("Q-learning Trajectory in Phase Space")
+    plt.xlabel("Position")
+    plt.ylabel("Velocity")
+    plt.grid(True)
+    plt.savefig("results/plots/qlearning_trajectory.png")
+    plt.close()
+
 if __name__ == "__main__":
     plot_rewards()
     plot_policy()
     plot_comparison()
     plot_all_training_curves()
+    plot_trajectory()
