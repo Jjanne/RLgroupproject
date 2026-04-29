@@ -31,10 +31,12 @@ def main():
     q_rewards = np.load("results/logs/rewards.npy")
     sarsa_rewards = np.load("results/logs/sarsa_rewards.npy")
     action_cost_rewards = np.load("results/logs/qlearning_action_cost_rewards.npy")
+    distance_rewards = np.load("results/logs/qlearning_distance_rewards.npy")
 
     summarize("Q-learning baseline", q_rewards)
     summarize("SARSA", sarsa_rewards)
     summarize("Q-learning with action cost", action_cost_rewards)
+    summarize("Q-learning with distance reward", distance_rewards)
 
 distance_rewards = np.load("results/logs/qlearning_distance_rewards.npy")
 summarize("Q-learning (distance reward)", distance_rewards)
