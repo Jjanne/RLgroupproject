@@ -1,3 +1,15 @@
+"""
+Q-learning (baseline)
+
+In this file, we trained a Q-learning agent on the MountainCar-v0 environment.
+
+The goal was to get the car to the top of the hill in as few steps as possible.
+Q-learning is off-policy, meaning it always updates using the best possible
+future action.
+
+We used this as the baseline to compare with the other methods.
+"""
+
 import gymnasium as gym
 import numpy as np
 import pickle

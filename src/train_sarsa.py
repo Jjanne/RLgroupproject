@@ -1,3 +1,14 @@
+"""
+SARSA (on-policy)
+
+This file implements SARSA on the same MountainCar problem.
+
+Unlike Q-learning, SARSA updates based on the action the agent actually takes,
+so it tends to be a bit more cautious.
+
+In practice, this usually means it learns a bit slower, but more steadily.
+"""
+
 import gymnasium as gym
 import numpy as np
 import pickle

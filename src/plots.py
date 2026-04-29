@@ -1,3 +1,16 @@
+"""
+Plots and comparison
+
+This file is used to visualize the results of the different experiments.
+
+It plots:
+- how the rewards evolve during training
+- the learned policy
+- a comparison between Q-learning, SARSA, and the action-cost version
+
+This helps to clearly see how each method behaves.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import os

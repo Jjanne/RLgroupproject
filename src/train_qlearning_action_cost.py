@@ -1,3 +1,15 @@
+"""
+Q-learning with action cost
+
+Here we modified the reward function by adding a small penalty when the agent
+accelerates left or right.
+
+The idea was to simulate a cost for using force (like fuel).
+
+Since MountainCar actually needs a lot of back-and-forth movement to build
+momentum, this makes the task harder, and the agent performs worse.
+"""
+
 import gymnasium as gym
 import numpy as np
 import pickle
