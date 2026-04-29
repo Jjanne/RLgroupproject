@@ -36,6 +36,8 @@ def main():
     summarize("SARSA", sarsa_rewards)
     summarize("Q-learning with action cost", action_cost_rewards)
 
+distance_rewards = np.load("results/logs/qlearning_distance_rewards.npy")
+summarize("Q-learning (distance reward)", distance_rewards)
 
 if __name__ == "__main__":
     main()
