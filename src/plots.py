@@ -1,14 +1,20 @@
 """
-Plots and comparison
+Plots for the MountainCar experiments.
 
-This file is used to visualize the results of the different experiments.
+This file creates the visualizations used to compare the different RL methods:
+- Q-learning baseline
+- SARSA
+- Q-learning with action cost
+- Q-learning with distance-based reward
 
-It plots:
-- how the rewards evolve during training
-- the learned policy
-- a comparison between Q-learning, SARSA, and the action-cost version
+The plots help show how rewards change during training and how each method
+performs compared to the others.
 
-This helps to clearly see how each method behaves.
+Main outputs:
+- Q-learning reward curve
+- Learned policy heatmap
+- Q-learning vs SARSA comparison
+- Full comparison of all methods
 """
 
 import numpy as np
@@ -127,7 +133,7 @@ def plot_all_training_curves():
     plt.grid(True)
     plt.savefig("results/plots/all_training_curves.png")
     plt.close()
-    
+
 if __name__ == "__main__":
     plot_rewards()
     plot_policy()
