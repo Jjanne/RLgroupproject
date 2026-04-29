@@ -16,24 +16,25 @@ The action-cost variation introduces a penalty when the agent accelerates, makin
 
 ## Project Structure
 
+```
 RLgroupproject/
-
 ├── src/
-    ├── train_qlearning.py
-    ├── train_sarsa.py
-    ├── train_qlearning_action_cost.py
-    ├── evaluate.py
-    ├── plots.py
-    ├── utils.py
-    └── wrappers.py
-
+│   ├── train_qlearning.py
+│   ├── train_sarsa.py
+│   ├── train_qlearning_action_cost.py
+│   ├── evaluate.py
+│   ├── plots.py
+│   ├── utils.py
+│   └── wrappers.py
+│
 ├── results/
-    ├── logs/
-    ├── models/
-    └── plots/
-
+│   ├── logs/
+│   ├── models/
+│   └── plots/
+│
 ├── requirements.txt
 └── README.md
+```
 
 ## How to Run
 
