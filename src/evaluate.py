@@ -1,79 +1,22 @@
-"""
-Evaluation of the trained RL agents on MountainCar.
+"""Evaluate the baseline Q-learning solution on MountainCar-v0."""
 
-This script runs a trained agent using its Q-table and measures how well it performs.
+import pandas as pd
 
-Instead of learning, the agent follows its learned policy and we track:
-- average reward
-- number of steps per episode
-- success rate (reaching the goal)
-
-This helps us understand how effective the learned policy is,
-and allows us to compare different methods objectively.
-"""
-
-import gymnasium as gym
-import numpy as np
-import pickle
+from part01.analysis import build_summary_frame
+from part01.config import PART01_EXPERIMENTS
+from part01.pipeline import evaluate_experiment, run_all_experiments
 
 
-def get_discrete_state(state, env, bins):
-    low = env.observation_space.low
-    high = env.observation_space.high
+def main():
+    baseline = next(config for config in PART01_EXPERIMENTS if config.slug == "discrete_q_learning")
+    artifacts = run_all_experiments([baseline], overwrite=False, tensorboard=False)
+    row = evaluate_experiment(baseline, artifacts[baseline.slug]["q_table"], reward_mode="objective")
+    frame = build_summary_frame([row])
 
-    scaled = (state - low) / (high - low)
-    discrete = (scaled * bins).astype(int)
-    discrete = np.clip(discrete, 0, bins - 1)
-
-    return tuple(discrete)
-
-
-def evaluate_agent(episodes=100):
-    env = gym.make("MountainCar-v0")
-
-    bins = np.array([40, 40])
-
-    with open("results/models/q_table.pkl", "rb") as f:
-        q_table = pickle.load(f)
-
-    rewards = []
-    steps = []
-    successes = 0
-
-    for ep in range(episodes):
-        state, _ = env.reset()
-        state = get_discrete_state(state, env, bins)
-
-        done = False
-        total_reward = 0
-        step_count = 0
-
-        while not done:
-            action = np.argmax(q_table[state])
-
-            next_state, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-
-            if terminated:
-                successes += 1
-
-            state = get_discrete_state(next_state, env, bins)
-
-            total_reward += reward
-            step_count += 1
-
-        rewards.append(total_reward)
-        steps.append(step_count)
-
-    env.close()
-
-    print("Evaluation results")
-    print("------------------")
-    print(f"Episodes: {episodes}")
-    print(f"Average reward: {np.mean(rewards):.2f}")
-    print(f"Average steps: {np.mean(steps):.2f}")
-    print(f"Success rate: {successes / episodes * 100:.2f}%")
+    pd.set_option("display.width", 160)
+    print(frame.to_string(index=False))
 
 
 if __name__ == "__main__":
-    evaluate_agent()
+    main()
+

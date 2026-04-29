@@ -4,6 +4,7 @@
 # Python cache
 __pycache__/
 *.pyc
+.ipynb_checkpoints/
 
 # Mac
 .DS_Store
@@ -11,6 +12,9 @@ __pycache__/
 # Results (optional, you can keep or ignore later)
 results/models/
 results/logs/
+results/plots/
+src/results/
+results/part01/
 
 # VSCode
 .vscode/
