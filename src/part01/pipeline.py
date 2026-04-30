@@ -6,9 +6,6 @@ from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
-from part01 import train_ppo
-
-
 from .config import (
     LOGS_DIR,
     MODELS_DIR,
@@ -93,7 +90,13 @@ def _train_sb3_experiment(
     Returns artifact compatible with analysis pipeline.
     """
 
-    from stable_baselines3 import DQN, PPO
+    try:
+        from stable_baselines3 import DQN, PPO
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError(
+            "stable-baselines3 is required for the DQN/PPO notebook experiments. "
+            "Install the SB3 dependencies before training these agents."
+        ) from exc
 
     ensure_result_directories()
 
@@ -338,12 +341,18 @@ def run_all_experiments(
     artifacts: Dict[str, Dict[str, object]] = {}
  
     for config in selected_experiments:
-        artifacts[config.slug] = train_experiment(
-            config,
-            overwrite=overwrite,
-            tensorboard=tensorboard,
-        )
- 
+        try:
+            artifacts[config.slug] = train_experiment(
+                config,
+                overwrite=overwrite,
+                tensorboard=tensorboard,
+            )
+        except ImportError as exc:
+            if config.is_sb3_agent:
+                print(f"[warning] Skipping {config.slug}: {exc}")
+                continue
+            raise
+
     return artifacts
 
 
@@ -534,7 +543,9 @@ def evaluate_all_experiments(
     rows: List[Dict[str, object]] = []
 
     for config in selected_experiments:
-        artifact = artifacts[config.slug]
+        artifact = artifacts.get(config.slug)
+        if artifact is None:
+            continue
 
         if _is_sb3_artifact(artifact):
             rows.append(

@@ -66,11 +66,16 @@ from part01.analysis import (
     build_summary_frame,
     explain_policy_with_random_forest,
     generate_all_figures,
+    plot_algorithm_comparison,
     plot_continuous_policy_heatmap,
+    plot_dqn_policy_heatmap,
     plot_discrete_policy_heatmaps,
     plot_objective_vs_engineered_reward,
     plot_phase_trajectories,
     plot_policy_disagreement,
+    plot_ppo_policy_heatmap,
+    plot_sb3_phase_trajectories,
+    plot_sb3_training_curves,
     plot_training_dashboard,
     save_summary_tables,
 )
@@ -158,6 +163,20 @@ objective_summary
 """
         ),
         markdown_cell(
+            """## Overall algorithm comparison
+
+This bar chart compares the **objective-evaluation mean reward** of every
+available experiment. If `stable-baselines3` is installed, the DQN and PPO
+agents are included automatically; otherwise the notebook keeps the original
+tabular experiments and skips the SB3 baselines gracefully.
+"""
+        ),
+        code_cell(
+            """fig, algorithm_comparison_path = plot_algorithm_comparison(summary_frame)
+fig
+"""
+        ),
+        markdown_cell(
             """## Training behaviour and convergence
 
 The dashboard below compares:
@@ -171,6 +190,21 @@ The dashboard below compares:
         code_cell(
             """fig, training_dashboard_path = plot_training_dashboard(artifacts)
 fig
+"""
+        ),
+        markdown_cell(
+            """## SB3 training curves
+
+When the DQN and PPO baselines are available, the next plot shows their
+episode-reward learning curves separately from the tabular dashboard.
+"""
+        ),
+        code_cell(
+            """if any(slug in artifacts for slug in ("discrete_dqn", "continuous_ppo")):
+    fig, sb3_training_path = plot_sb3_training_curves(artifacts)
+    fig
+else:
+    print("SB3 artifacts are not available in this environment.")
 """
         ),
         markdown_cell(
@@ -193,6 +227,32 @@ fig
         code_cell(
             """fig, disagreement_path = plot_policy_disagreement(artifacts)
 fig
+"""
+        ),
+        markdown_cell(
+            """## Neural policy maps
+
+The next cells visualise the learned policies of the neural baselines when they are
+available:
+
+- **DQN** predicts a discrete action directly on `MountainCar-v0`
+- **PPO** predicts a continuous force on `MountainCarContinuous-v0`
+"""
+        ),
+        code_cell(
+            """if "discrete_dqn" in artifacts:
+    fig, dqn_policy_path = plot_dqn_policy_heatmap(artifacts["discrete_dqn"]["model"])
+    fig
+else:
+    print("DQN artifact is not available in this environment.")
+"""
+        ),
+        code_cell(
+            """if "continuous_ppo" in artifacts:
+    fig, ppo_policy_path = plot_ppo_policy_heatmap(artifacts["continuous_ppo"]["model"])
+    fig
+else:
+    print("PPO artifact is not available in this environment.")
 """
         ),
         markdown_cell(
@@ -219,6 +279,21 @@ convert that momentum into enough energy to climb the right hill.
         code_cell(
             """fig, trajectory_path = plot_phase_trajectories(artifacts)
 fig
+"""
+        ),
+        markdown_cell(
+            """## Neural trajectories
+
+If the SB3 agents are available, the next figure shows their deterministic rollouts
+in phase space so they can be compared against the tabular trajectories above.
+"""
+        ),
+        code_cell(
+            """if any(slug in artifacts for slug in ("discrete_dqn", "continuous_ppo")):
+    fig, sb3_trajectory_path = plot_sb3_phase_trajectories(artifacts)
+    fig
+else:
+    print("SB3 artifacts are not available in this environment.")
 """
         ),
         markdown_cell(

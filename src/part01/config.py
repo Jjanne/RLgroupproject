@@ -152,6 +152,7 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
         state_bins=None,  
         is_sb3_agent=True,             # raw (position, velocity) fed to the network
         episodes=200_000,               # used as total_timesteps by SB3
+        total_timesteps=200_000,
         training_wrapper="none",        # no shaping — fair comparison with tabular Q
         description=(
             "Deep Q-Network on the native discrete action space. Direct structural "
@@ -167,6 +168,7 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
         state_bins=None,                 
         is_sb3_agent=True,             # raw (position, velocity) fed to the network
         episodes=300_000,               
+        total_timesteps=300_000,
         training_wrapper="continuous_energy",
         wrapper_kwargs={"energy_scale": 180.0, "progress_scale": 8.0},
         description=(

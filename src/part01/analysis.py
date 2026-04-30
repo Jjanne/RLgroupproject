@@ -16,7 +16,28 @@ import pandas as pd
 
 from .core import ActionAdapter, StateDiscretizer, rolling_mean
 from .envs import build_env
-from .pipeline import collect_trajectory
+from .pipeline import collect_trajectory, collect_trajectory_sb3
+
+
+def _is_sb3_artifact(artifact: Dict[str, object]) -> bool:
+    """Return True when an artifact comes from a neural SB3-style agent."""
+
+    return "model" in artifact and artifact.get("model") is not None
+
+
+def _extract_rewards(artifact: Dict[str, object]) -> np.ndarray:
+    """Extract the primary training reward series from a tabular or SB3 artifact."""
+
+    history = artifact.get("history")
+    if history is not None and "reward" in history:
+        rewards = np.asarray(history["reward"], dtype=np.float32)
+        return rewards if rewards.size else None
+
+    if "episode_rewards" in artifact:
+        rewards = np.asarray(artifact["episode_rewards"], dtype=np.float32)
+        return rewards if rewards.size else None
+
+    return None
 
 
 def build_summary_frame(rows: List[Dict[str, object]]) -> pd.DataFrame:
@@ -98,11 +119,22 @@ def plot_discrete_policy_heatmaps(artifacts, experiments=None, output_path=None)
     selected = [
         config for config in (experiments or PART01_EXPERIMENTS)
         if config.env_id == "MountainCar-v0"
+        and config.slug in artifacts
         and "q_table" in artifacts[config.slug]
     ]
 
-    fig, axes = plt.subplots(2, 2, figsize=(15, 11))
-    axes = axes.ravel()
+    fig = plt.figure(figsize=(15.5, 11))
+    grid = fig.add_gridspec(2, 3, width_ratios=(1.0, 1.0, 0.06), wspace=0.26, hspace=0.30)
+    axes = [
+        fig.add_subplot(grid[0, 0]),
+        fig.add_subplot(grid[0, 1]),
+        fig.add_subplot(grid[1, 0]),
+        fig.add_subplot(grid[1, 1]),
+    ]
+    for axis in axes[1:]:
+        axis.sharex(axes[0])
+        axis.sharey(axes[0])
+    colorbar_axis = fig.add_subplot(grid[:, 2])
 
     for axis, config in zip(axes, selected):
         artifact = artifacts[config.slug]
@@ -112,8 +144,10 @@ def plot_discrete_policy_heatmaps(artifacts, experiments=None, output_path=None)
         im = axis.imshow(policy.T, origin="lower", aspect="auto", cmap="RdYlGn", vmin=0, vmax=2)
         axis.set_title(config.title)
 
-    fig.colorbar(im, ax=axes)
-    fig.savefig(output_path, dpi=160)
+    fig.colorbar(im, cax=colorbar_axis, label="Action: 0=left, 1=idle, 2=right")
+    fig.suptitle("Discrete policy maps", fontsize=14)
+    fig.subplots_adjust(top=0.90, left=0.06, right=0.95, bottom=0.07)
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
     return fig, output_path
 
 
@@ -175,11 +209,21 @@ def plot_policy_disagreement(
         slug
         for slug in artifacts
         if slug != reference_slug and artifacts[slug]["config"].env_id == "MountainCar-v0"
+        and "q_table" in artifacts[slug]
     ]
 
-    fig, axes = plt.subplots(1, len(comparison_slugs), figsize=(5 * len(comparison_slugs), 5), sharey=True)
-    if len(comparison_slugs) == 1:
-        axes = [axes]
+    figure_width = 5.2 * len(comparison_slugs) + 0.9
+    fig = plt.figure(figsize=(figure_width, 5.4))
+    grid = fig.add_gridspec(
+        1,
+        len(comparison_slugs) + 1,
+        width_ratios=[1.0] * len(comparison_slugs) + [0.06],
+        wspace=0.28,
+    )
+    axes = [fig.add_subplot(grid[0, 0])]
+    for index in range(1, len(comparison_slugs)):
+        axes.append(fig.add_subplot(grid[0, index], sharey=axes[0]))
+    colorbar_axis = fig.add_subplot(grid[0, -1])
 
     for axis, slug in zip(axes, comparison_slugs):
         artifact = artifacts[slug]
@@ -201,8 +245,8 @@ def plot_policy_disagreement(
             bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"},
         )
 
-    fig.colorbar(image, ax=axes, label="1 = different greedy action")
-    fig.subplots_adjust(top=0.88, wspace=0.25)
+    fig.colorbar(image, cax=colorbar_axis, label="1 = different greedy action")
+    fig.subplots_adjust(top=0.85, left=0.06, right=0.95, bottom=0.12)
     fig.savefig(output_path, dpi=160, bbox_inches="tight")
     return fig, output_path
 
@@ -398,6 +442,7 @@ def plot_sb3_phase_trajectories(artifacts, output_path=None):
         output_path = PLOTS_DIR / "sb3_phase_trajectories.png"
 
     fig, ax = plt.subplots(figsize=(8, 6))
+    plotted = False
 
     for slug, artifact in artifacts.items():
         if not _is_sb3_artifact(artifact):
@@ -409,14 +454,19 @@ def plot_sb3_phase_trajectories(artifacts, output_path=None):
         )
 
         ax.plot(traj["position"], traj["velocity"], label=artifact["config"].title)
+        plotted = True
 
     ax.set_title("SB3 Phase Trajectories")
     ax.set_xlabel("Position")
     ax.set_ylabel("Velocity")
-    ax.legend()
     ax.grid(True)
+    if plotted:
+        ax.legend(frameon=False)
+    else:
+        ax.text(0.5, 0.5, "No SB3 artifacts available", ha="center", va="center", transform=ax.transAxes)
 
-    fig.savefig(output_path, dpi=160)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
     return fig, output_path
 
 def plot_sb3_training_curves(artifacts, output_path=None):
@@ -425,26 +475,38 @@ def plot_sb3_training_curves(artifacts, output_path=None):
         output_path = PLOTS_DIR / "sb3_training_curves.png"
 
     fig, ax = plt.subplots(figsize=(10, 5))
+    plotted = False
 
     for slug, artifact in artifacts.items():
-        if "episode_rewards" not in artifact:
+        if not _is_sb3_artifact(artifact) or "episode_rewards" not in artifact:
             continue
 
         rewards = np.array(artifact["episode_rewards"])
+        if rewards.size == 0:
+            continue
         ax.plot(rolling_mean(rewards, 50), label=artifact["config"].title)
+        plotted = True
 
     ax.set_title("SB3 Training Curves")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Reward")
-    ax.legend()
     ax.grid(True)
+    if plotted:
+        ax.legend(frameon=False)
+    else:
+        ax.text(0.5, 0.5, "No SB3 training curves available", ha="center", va="center", transform=ax.transAxes)
 
-    fig.savefig(output_path, dpi=160)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
     return fig, output_path
 
 
 
-def plot_dqn_policy_heatmap(model, resolution=100):
+def plot_dqn_policy_heatmap(model, output_path=None, resolution=100):
+    ensure_result_directories()
+    if output_path is None:
+        output_path = PLOTS_DIR / "dqn_policy_heatmap.png"
+
     positions = np.linspace(-1.2, 0.6, resolution)
     velocities = np.linspace(-0.07, 0.07, resolution)
 
@@ -452,17 +514,27 @@ def plot_dqn_policy_heatmap(model, resolution=100):
 
     for i, p in enumerate(positions):
         for j, v in enumerate(velocities):
-            obs = np.array([p, v])
+            obs = np.array([p, v], dtype=np.float32)
             action, _ = model.predict(obs, deterministic=True)
-            grid[i, j] = action
+            grid[i, j] = int(np.asarray(action).item())
 
-    plt.imshow(grid.T, origin="lower")
-    plt.colorbar(label="Action")
-    plt.title("DQN Policy Heatmap")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    image = ax.imshow(grid.T, origin="lower", aspect="auto", cmap="RdYlGn", vmin=0, vmax=2)
+    ax.set_title("DQN Policy Heatmap")
+    ax.set_xlabel("Position sample")
+    ax.set_ylabel("Velocity sample")
+    fig.colorbar(image, ax=ax, label="Action: 0=left, 1=idle, 2=right")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
+    return fig, output_path
 
 
 
-def plot_ppo_policy_heatmap(model, resolution=100):
+def plot_ppo_policy_heatmap(model, output_path=None, resolution=100):
+    ensure_result_directories()
+    if output_path is None:
+        output_path = PLOTS_DIR / "ppo_policy_heatmap.png"
+
     positions = np.linspace(-1.2, 0.6, resolution)
     velocities = np.linspace(-0.07, 0.07, resolution)
 
@@ -470,13 +542,19 @@ def plot_ppo_policy_heatmap(model, resolution=100):
 
     for i, p in enumerate(positions):
         for j, v in enumerate(velocities):
-            obs = np.array([p, v])
+            obs = np.array([p, v], dtype=np.float32)
             action, _ = model.predict(obs, deterministic=True)
-            grid[i, j] = action
+            grid[i, j] = float(np.asarray(action).reshape(-1)[0])
 
-    plt.imshow(grid.T, origin="lower", cmap="coolwarm")
-    plt.colorbar(label="Force")
-    plt.title("PPO Policy Heatmap")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    image = ax.imshow(grid.T, origin="lower", aspect="auto", cmap="coolwarm", vmin=-1.0, vmax=1.0)
+    ax.set_title("PPO Policy Heatmap")
+    ax.set_xlabel("Position sample")
+    ax.set_ylabel("Velocity sample")
+    fig.colorbar(image, ax=ax, label="Force")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
+    return fig, output_path
 
 
 
@@ -485,13 +563,19 @@ def plot_algorithm_comparison(summary_frame, output_path=None):
     if output_path is None:
         output_path = PLOTS_DIR / "algorithm_comparison.png"
 
+    objective = summary_frame[summary_frame["reward_mode"] == "objective"].copy()
+    if objective.empty:
+        raise ValueError("No objective-evaluation rows available for algorithm comparison.")
+    objective = objective.sort_values(["success_rate", "mean_reward"], ascending=[False, False])
+
     fig, ax = plt.subplots(figsize=(10, 5))
+    objective.set_index("slug")["mean_reward"].plot(kind="bar", ax=ax)
 
-    summary_frame.groupby("slug")["mean_reward"].mean().plot(kind="bar", ax=ax)
-
-    ax.set_title("Algorithm Comparison")
+    ax.set_title("Algorithm Comparison (Objective Reward)")
     ax.set_ylabel("Mean Reward")
+    ax.set_xlabel("Experiment")
     ax.grid(True, axis="y")
 
-    fig.savefig(output_path, dpi=160)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
     return fig, output_path
