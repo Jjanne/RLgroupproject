@@ -39,7 +39,7 @@ class ExperimentConfig:
     eval_episodes: int = 150
     log_every: int = 250
     description: str = ""
-    is_sb3_agent: bool = False  
+    is_sb3_agent: bool = False
     total_timesteps: int = 100_000
 
     @property
@@ -61,9 +61,7 @@ class ExperimentConfig:
 
 
 PART01_EXPERIMENTS: List[ExperimentConfig] = [
-    # ------------------------------------------------------------------
-    # Tabular baselines (unchanged)
-    # ------------------------------------------------------------------
+
     ExperimentConfig(
         slug="discrete_q_learning",
         title="Discrete MountainCar - Q-learning baseline",
@@ -122,38 +120,17 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
             "action, pushing the policy toward more economical control."
         ),
     ),
-    ExperimentConfig(
-        slug="continuous_q_learning",
-        title="Continuous MountainCar - discretised-action Q-learning",
-        env_id="MountainCarContinuous-v0",
-        algorithm="q_learning",
-        state_bins=(36, 28),
-        episodes=5000,
-        epsilon_decay=0.998,
-        q_init_low=0.0,
-        q_init_high=3.0,
-        action_values=(-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0),
-        training_wrapper="continuous_energy",
-        wrapper_kwargs={"energy_scale": 180.0, "progress_scale": 8.0},
-        description=(
-            "Continuous-action variant solved with a tabular controller over a "
-            "discretised thrust set. Training uses energy/progress shaping, while "
-            "evaluation is always reported on the native fuel-aware reward."
-        ),
-    ),
-    # ------------------------------------------------------------------
-    # Neural-net agents (SB3)
-    # ------------------------------------------------------------------
+    
     ExperimentConfig(
         slug="discrete_dqn",
         title="Discrete MountainCar - DQN",
-        env_id="MountainCar-v0",        # same discrete env as Q-learning / SARSA
+        env_id="MountainCar-v0",
         algorithm="dqn",
-        state_bins=None,  
-        is_sb3_agent=True,             # raw (position, velocity) fed to the network
-        episodes=200_000,               # used as total_timesteps by SB3
-        total_timesteps=200_000,
-        training_wrapper="none",        # no shaping — fair comparison with tabular Q
+        state_bins=None,
+        is_sb3_agent=True,
+        episodes=300_000,
+        total_timesteps=300_000,
+        training_wrapper="none",
         description=(
             "Deep Q-Network on the native discrete action space. Direct structural "
             "comparison against tabular Q-learning: same environment and action set, "
@@ -165,17 +142,17 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
         title="Continuous MountainCar - PPO",
         env_id="MountainCarContinuous-v0",
         algorithm="ppo",
-        state_bins=None,                 
-        is_sb3_agent=True,             # raw (position, velocity) fed to the network
-        episodes=300_000,               
-        total_timesteps=300_000,
-        training_wrapper="continuous_energy",
-        wrapper_kwargs={"energy_scale": 180.0, "progress_scale": 8.0},
+        state_bins=None,
+        is_sb3_agent=True,
+        episodes=1_000_000,
+        total_timesteps=1_000_000,
+        training_wrapper="none",
+        wrapper_kwargs={},
         description=(
             "Proximal Policy Optimisation on the continuous action space. "
-            "Uses the same energy/progress reward shaping as the tabular continuous "
-            "baseline, enabling a direct comparison of tabular vs. policy-gradient "
-            "approaches on the same shaped objective."
+            "Trained without reward shaping using state-dependent exploration "
+            "(use_sde=True) and observation normalisation (VecNormalize). "
+            "Evaluation is reported on the native fuel-aware reward."
         ),
     ),
 ]

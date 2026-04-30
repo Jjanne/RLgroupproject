@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import numpy as np
+from .train_dqn import train_dqn  
+from .train_ppo import train_ppo
 
 from .config import (
     LOGS_DIR,
@@ -20,7 +22,7 @@ from .envs import build_env
 
 try:
     from tensorboardX import SummaryWriter
-except ImportError:  # pragma: no cover - optional dependency
+except ImportError:  
     SummaryWriter = None
 
 
@@ -89,78 +91,69 @@ def _train_sb3_experiment(
     Train or load an SB3 agent (DQN / PPO).
     Returns artifact compatible with analysis pipeline.
     """
-
+ 
     try:
         from stable_baselines3 import DQN, PPO
-    except ImportError as exc:  # pragma: no cover - optional dependency
+    except ImportError as exc:  
         raise ImportError(
             "stable-baselines3 is required for the DQN/PPO notebook experiments. "
             "Install the SB3 dependencies before training these agents."
         ) from exc
-
+ 
     ensure_result_directories()
-
+ 
     model_path = MODELS_DIR / f"{config.slug}_sb3_model.zip"
-    log_path = LOGS_DIR / f"{config.slug}_sb3_rewards.npy"
-
-    # ---- Load if exists ----
+    log_path   = LOGS_DIR   / f"{config.slug}_sb3_rewards.npy"
+ 
+    # ── Load if exists ────────────────────────────────────────────────────────
     if not overwrite and model_path.exists():
-        if config.algorithm.lower() == "dqn":
+        algo = config.algorithm.lower()
+        if algo == "dqn":
             model = DQN.load(model_path)
-        elif config.algorithm.lower() == "ppo":
+        elif algo == "ppo":
             model = PPO.load(model_path)
         else:
             raise ValueError(f"Unsupported SB3 algorithm: {config.algorithm}")
-
-        episode_rewards = np.load(log_path) if log_path.exists() else []
-
+ 
+        episode_rewards = np.load(log_path).tolist() if log_path.exists() else []
+ 
         return {
-            "config": config,
-            "model": model,
+            "config":          config,
+            "model":           model,
             "episode_rewards": episode_rewards,
         }
-
-    # ---- Train ----
-    env = build_env(config, reward_mode="training")
-
-    if config.algorithm.lower() == "dqn":
-        model = DQN(
-            "MlpPolicy",
+ 
+    env  = build_env(config, reward_mode="training")
+    algo = config.algorithm.lower()
+ 
+    if algo == "dqn":
+        result = train_dqn(
+            config.slug,
             env,
-            verbose=0,
-            tensorboard_log=str(TENSORBOARD_DIR / config.slug) if tensorboard else None,
+            total_timesteps=config.total_timesteps,
+            model_path=model_path,
+            log_path=log_path,
             seed=config.seed,
         )
-    elif config.algorithm.lower() == "ppo":
-        model = PPO(
-            "MlpPolicy",
+    elif algo == "ppo":
+        result = train_ppo(
+            config.slug,
             env,
-            verbose=0,
-            tensorboard_log=str(TENSORBOARD_DIR / config.slug) if tensorboard else None,
+            total_timesteps=config.total_timesteps,
+            model_path=model_path,
+            log_path=log_path,
             seed=config.seed,
         )
     else:
         raise ValueError(f"Unsupported SB3 algorithm: {config.algorithm}")
-
-    model.learn(total_timesteps=config.total_timesteps)
-
-    # ---- Save ----
-    model.save(model_path)
-
-    # ---- Extract training rewards (approx) ----
-    episode_rewards = []
-    if hasattr(model, "ep_info_buffer"):
-        episode_rewards = [ep["r"] for ep in model.ep_info_buffer]
-
-    np.save(log_path, np.array(episode_rewards))
-
-    env.close()
-
+ 
+ 
     return {
-        "config": config,
-        "model": model,
-        "episode_rewards": episode_rewards,
+        "config":          config,
+        "model":           result["model"],
+        "episode_rewards": result["episode_rewards"],
     }
+
 
 
 
@@ -175,11 +168,9 @@ def train_experiment(
     setup code runs.  Everything below the early-return is unchanged.
     """
  
-    # ── SB3 early exit — no Q-table, discretizer, or epsilon needed ──────────
     if config.is_sb3_agent:
         return _train_sb3_experiment(config, overwrite=overwrite, tensorboard=tensorboard)
  
-    # ── tabular path (original code, completely unchanged) ───────────────────
     paths = _artifact_paths(config)
     if (
         not overwrite
