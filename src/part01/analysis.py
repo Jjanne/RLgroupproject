@@ -268,7 +268,6 @@ def plot_phase_trajectories(
             "discrete_q_learning",
             "discrete_directional_cost",
             "discrete_non_null_cost",
-            "continuous_q_learning",
         )
     )
 
@@ -425,7 +424,6 @@ def generate_all_figures(
     outputs = {}
     _, outputs["training_dashboard"] = plot_training_dashboard(artifacts)
     _, outputs["discrete_policies"] = plot_discrete_policy_heatmaps(artifacts)
-    _, outputs["continuous_policy"] = plot_continuous_policy_heatmap(artifacts["continuous_q_learning"])
     _, outputs["policy_disagreement"] = plot_policy_disagreement(artifacts)
     _, outputs["phase_trajectories"] = plot_phase_trajectories(artifacts)
     _, outputs["objective_vs_engineered"] = plot_objective_vs_engineered_reward(summary_frame)
