@@ -6,6 +6,9 @@ from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 
+from part01 import train_ppo
+
+
 from .config import (
     LOGS_DIR,
     MODELS_DIR,
@@ -80,13 +83,100 @@ def load_artifacts(config: ExperimentConfig) -> Dict[str, object]:
     }
 
 
+def _train_sb3_experiment(
+    config: ExperimentConfig,
+    overwrite: bool = False,
+    tensorboard: bool = False,
+):
+    """
+    Train or load an SB3 agent (DQN / PPO).
+    Returns artifact compatible with analysis pipeline.
+    """
+
+    from stable_baselines3 import DQN, PPO
+
+    ensure_result_directories()
+
+    model_path = MODELS_DIR / f"{config.slug}_sb3_model.zip"
+    log_path = LOGS_DIR / f"{config.slug}_sb3_rewards.npy"
+
+    # ---- Load if exists ----
+    if not overwrite and model_path.exists():
+        if config.algorithm.lower() == "dqn":
+            model = DQN.load(model_path)
+        elif config.algorithm.lower() == "ppo":
+            model = PPO.load(model_path)
+        else:
+            raise ValueError(f"Unsupported SB3 algorithm: {config.algorithm}")
+
+        episode_rewards = np.load(log_path) if log_path.exists() else []
+
+        return {
+            "config": config,
+            "model": model,
+            "episode_rewards": episode_rewards,
+        }
+
+    # ---- Train ----
+    env = build_env(config, reward_mode="training")
+
+    if config.algorithm.lower() == "dqn":
+        model = DQN(
+            "MlpPolicy",
+            env,
+            verbose=0,
+            tensorboard_log=str(TENSORBOARD_DIR / config.slug) if tensorboard else None,
+            seed=config.seed,
+        )
+    elif config.algorithm.lower() == "ppo":
+        model = PPO(
+            "MlpPolicy",
+            env,
+            verbose=0,
+            tensorboard_log=str(TENSORBOARD_DIR / config.slug) if tensorboard else None,
+            seed=config.seed,
+        )
+    else:
+        raise ValueError(f"Unsupported SB3 algorithm: {config.algorithm}")
+
+    model.learn(total_timesteps=config.total_timesteps)
+
+    # ---- Save ----
+    model.save(model_path)
+
+    # ---- Extract training rewards (approx) ----
+    episode_rewards = []
+    if hasattr(model, "ep_info_buffer"):
+        episode_rewards = [ep["r"] for ep in model.ep_info_buffer]
+
+    np.save(log_path, np.array(episode_rewards))
+
+    env.close()
+
+    return {
+        "config": config,
+        "model": model,
+        "episode_rewards": episode_rewards,
+    }
+
+
+
 def train_experiment(
     config: ExperimentConfig,
     overwrite: bool = False,
     tensorboard: bool = False,
 ) -> Dict[str, object]:
-    """Train one tabular controller and persist the resulting artifacts."""
-
+    """Train one controller and persist the resulting artifacts.
+ 
+    Routes SB3 agents (DQN, PPO) to _train_sb3_experiment before any tabular
+    setup code runs.  Everything below the early-return is unchanged.
+    """
+ 
+    # ── SB3 early exit — no Q-table, discretizer, or epsilon needed ──────────
+    if config.is_sb3_agent:
+        return _train_sb3_experiment(config, overwrite=overwrite, tensorboard=tensorboard)
+ 
+    # ── tabular path (original code, completely unchanged) ───────────────────
     paths = _artifact_paths(config)
     if (
         not overwrite
@@ -95,13 +185,13 @@ def train_experiment(
         and paths["metadata"].exists()
     ):
         return load_artifacts(config)
-
+ 
     env = build_env(config, reward_mode="training")
     discretizer = StateDiscretizer.from_env(env, config.state_bins)
     action_adapter = ActionAdapter.from_config(env, config.action_values)
     q_table = _initial_q_table(config, action_adapter.action_count)
     rng = np.random.default_rng(config.seed)
-
+ 
     history: Dict[str, List[float]] = {
         "reward": [],
         "raw_reward": [],
@@ -115,19 +205,19 @@ def train_experiment(
         "max_position": [],
         "epsilon": [],
     }
-
+ 
     epsilon = float(config.epsilon_start)
     writer = None
     if tensorboard and SummaryWriter is not None:
         writer = SummaryWriter(logdir=str(paths["tensorboard"]))
-
+ 
     for episode in range(config.episodes):
         obs, _ = env.reset(seed=config.seed + episode)
         state = discretizer.encode(obs)
         action_index = None
         if config.algorithm == "sarsa":
             action_index = _choose_action(rng, q_table, state, epsilon)
-
+ 
         done = False
         total_reward = 0.0
         total_raw_reward = 0.0
@@ -139,16 +229,16 @@ def train_experiment(
         squared_action_sum = 0.0
         max_position = float(obs[0])
         success = 0
-
+ 
         while not done:
             if config.algorithm == "q_learning":
                 action_index = _choose_action(rng, q_table, state, epsilon)
-
+ 
             env_action = action_adapter.to_env(action_index)
             next_obs, reward, terminated, truncated, info = env.step(env_action)
             done = bool(terminated or truncated)
             next_state = discretizer.encode(next_obs)
-
+ 
             if config.algorithm == "sarsa" and not done:
                 next_action_index = _choose_action(rng, q_table, next_state, epsilon)
                 td_target = reward + config.gamma * q_table[next_state + (next_action_index,)]
@@ -159,11 +249,11 @@ def train_experiment(
                 td_target = reward
             else:
                 td_target = reward + config.gamma * np.max(q_table[next_state])
-
+ 
             q_table[state + (action_index,)] += config.alpha * (
                 td_target - q_table[state + (action_index,)]
             )
-
+ 
             force = action_adapter.force_value(action_index)
             if abs(force) > 1e-9:
                 non_null_actions += 1
@@ -173,7 +263,7 @@ def train_experiment(
                 right_actions += 1
             squared_action_sum += force * force
             max_position = max(max_position, float(next_obs[0]))
-
+ 
             raw_reward = float(info.get("raw_reward", reward))
             penalty = float(info.get("reward_penalty", 0.0))
             total_reward += float(reward)
@@ -182,11 +272,11 @@ def train_experiment(
             steps += 1
             if terminated:
                 success = 1
-
+ 
             state = next_state
             if config.algorithm == "sarsa" and next_action_index is not None:
                 action_index = next_action_index
-
+ 
         epsilon = max(float(config.epsilon_end), float(epsilon * config.epsilon_decay))
         history["reward"].append(total_reward)
         history["raw_reward"].append(total_raw_reward)
@@ -199,7 +289,7 @@ def train_experiment(
         history["squared_action_sum"].append(squared_action_sum)
         history["max_position"].append(max_position)
         history["epsilon"].append(epsilon)
-
+ 
         if writer is not None:
             step = episode + 1
             writer.add_scalar("train/reward", total_reward, step)
@@ -209,7 +299,7 @@ def train_experiment(
             writer.add_scalar("train/non_null_actions", non_null_actions, step)
             writer.add_scalar("train/max_position", max_position, step)
             writer.add_scalar("train/epsilon", epsilon, step)
-
+ 
         if (episode + 1) % config.log_every == 0:
             recent = history["reward"][-config.log_every :]
             print(
@@ -217,39 +307,43 @@ def train_experiment(
                 f"| avg shaped reward {np.mean(recent):>8.2f} "
                 f"| epsilon {epsilon:.4f}"
             )
-
+ 
     if writer is not None:
         writer.close()
     env.close()
-
+ 
     np.save(paths["model"], q_table)
     serialised_history = _serialise_history(history)
     np.savez_compressed(paths["history"], **serialised_history)
     paths["metadata"].write_text(json.dumps(config.to_dict(), indent=2), encoding="utf-8")
-
+ 
     return {
-        "config": config,
-        "paths": paths,
-        "q_table": q_table,
-        "history": serialised_history,
+        "config":   config,
+        "paths":    paths,
+        "q_table":  q_table,
+        "history":  serialised_history,
     }
 
-
+def _is_sb3_artifact(artifact: Dict[str, object]) -> bool:
+    return "model" in artifact and artifact.get("q_table") is None
+ 
 def run_all_experiments(
     experiments: Optional[Iterable[ExperimentConfig]] = None,
     overwrite: bool = False,
     tensorboard: bool = False,
 ) -> Dict[str, Dict[str, object]]:
     """Train or load all configured experiments."""
-
+ 
     selected_experiments = list(experiments or PART01_EXPERIMENTS)
     artifacts: Dict[str, Dict[str, object]] = {}
+ 
     for config in selected_experiments:
         artifacts[config.slug] = train_experiment(
             config,
             overwrite=overwrite,
             tensorboard=tensorboard,
         )
+ 
     return artifacts
 
 
@@ -370,18 +464,91 @@ def evaluate_experiment(
     }
 
 
+def evaluate_experiment_sb3(
+    config: ExperimentConfig,
+    model,
+    episodes: int = 50,
+    reward_mode: str = "objective",
+    seed_offset: int = 10_000,
+):
+    env = build_env(config, reward_mode=reward_mode)
+
+    rewards, steps_taken, successes = [], [], []
+    max_positions, final_positions = [], []
+
+    for episode in range(episodes):
+        obs, _ = env.reset(seed=config.seed + seed_offset + episode)
+
+        done = False
+        total_reward = 0.0
+        steps = 0
+        max_position = float(obs[0])
+        success = 0
+
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+
+            next_obs, reward, terminated, truncated, _ = env.step(action)
+            done = bool(terminated or truncated)
+
+            total_reward += float(reward)
+            steps += 1
+            max_position = max(max_position, float(next_obs[0]))
+
+            if terminated:
+                success = 1
+
+            obs = next_obs
+
+        rewards.append(total_reward)
+        steps_taken.append(steps)
+        successes.append(success)
+        max_positions.append(max_position)
+        final_positions.append(float(obs[0]))
+
+    env.close()
+
+    return {
+        "slug": config.slug,
+        "title": config.title,
+        "env_id": config.env_id,
+        "algorithm": "sb3",
+        "reward_mode": reward_mode,
+        "episodes": episodes,
+        "mean_reward": float(np.mean(rewards)),
+        "std_reward": float(np.std(rewards)),
+        "mean_steps": float(np.mean(steps_taken)),
+        "success_rate": float(np.mean(successes)),
+        "mean_max_position": float(np.mean(max_positions)),
+        "mean_final_position": float(np.mean(final_positions)),
+    }
+
+
 def evaluate_all_experiments(
     artifacts: Dict[str, Dict[str, object]],
     experiments: Optional[Iterable[ExperimentConfig]] = None,
     objective_episodes: Optional[int] = None,
 ) -> List[Dict[str, object]]:
-    """Evaluate every experiment in objective mode and, when relevant, training mode."""
 
     selected_experiments = list(experiments or PART01_EXPERIMENTS)
     rows: List[Dict[str, object]] = []
 
     for config in selected_experiments:
-        q_table = artifacts[config.slug]["q_table"]
+        artifact = artifacts[config.slug]
+
+        if _is_sb3_artifact(artifact):
+            rows.append(
+                evaluate_experiment_sb3(
+                    config,
+                    model=artifact["model"],
+                    episodes=objective_episodes or config.eval_episodes,
+                    reward_mode="objective",
+                )
+            )
+            continue
+
+        q_table = artifact["q_table"]
+
         rows.append(
             evaluate_experiment(
                 config,
@@ -390,6 +557,7 @@ def evaluate_all_experiments(
                 reward_mode="objective",
             )
         )
+
         if config.has_engineered_reward:
             rows.append(
                 evaluate_experiment(
@@ -402,7 +570,6 @@ def evaluate_all_experiments(
             )
 
     return rows
-
 
 def collect_trajectory(
     config: ExperimentConfig,
@@ -450,6 +617,45 @@ def collect_trajectory(
         "raw_reward": np.asarray(raw_rewards, dtype=np.float32),
         "action_index": np.asarray(actions, dtype=np.int32),
         "force": np.asarray(forces, dtype=np.float32),
+    }
+
+def collect_trajectory_sb3(
+    config: ExperimentConfig,
+    model,
+    reward_mode: str = "objective",
+    seed: int = 2026,
+):
+    env = build_env(config, reward_mode=reward_mode)
+
+    obs, _ = env.reset(seed=seed)
+
+    positions = [float(obs[0])]
+    velocities = [float(obs[1])]
+    rewards = []
+    actions = []
+
+    done = False
+
+    while not done:
+        action, _ = model.predict(obs, deterministic=True)
+
+        next_obs, reward, terminated, truncated, _ = env.step(action)
+        done = bool(terminated or truncated)
+
+        positions.append(float(next_obs[0]))
+        velocities.append(float(next_obs[1]))
+        rewards.append(float(reward))
+        actions.append(action)
+
+        obs = next_obs
+
+    env.close()
+
+    return {
+        "position": np.array(positions),
+        "velocity": np.array(velocities),
+        "reward": np.array(rewards),
+        "action": np.array(actions),
     }
 
 

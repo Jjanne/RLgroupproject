@@ -49,12 +49,10 @@ def _policy_array(config: ExperimentConfig, q_table: np.ndarray) -> Tuple[np.nda
 
 
 def plot_training_dashboard(
-    artifacts: Dict[str, Dict[str, object]],
-    output_path: Path = None,
-    window: int = 100,
+    artifacts,
+    output_path=None,
+    window=100,
 ):
-    """Plot rolling training statistics for all experiments."""
-
     ensure_result_directories()
     if output_path is None:
         output_path = PLOTS_DIR / "training_dashboard.png"
@@ -63,80 +61,62 @@ def plot_training_dashboard(
     axes = axes.ravel()
 
     for slug, artifact in artifacts.items():
-        history = artifact["history"]
+        rewards = _extract_rewards(artifact)
+        if rewards is None:
+            continue
+
         label = artifact["config"].title
-        axes[0].plot(rolling_mean(history["reward"], window), label=label)
-        axes[1].plot(rolling_mean(history["raw_reward"], window), label=label)
-        axes[2].plot(rolling_mean(history["success"].astype(float), window), label=label)
-        axes[3].plot(rolling_mean(history["max_position"], window), label=label)
+        axes[0].plot(rolling_mean(rewards, window), label=label)
 
-    axes[0].set_title("Rolling shaped reward")
-    axes[0].set_xlabel("Episode")
-    axes[0].set_ylabel("Reward")
+        if "history" in artifact:
+            history = artifact["history"]
+            axes[1].plot(rolling_mean(history["raw_reward"], window), label=label)
+            axes[2].plot(rolling_mean(history["success"].astype(float), window), label=label)
+            axes[3].plot(rolling_mean(history["max_position"], window), label=label)
 
-    axes[1].set_title("Rolling objective/native reward")
-    axes[1].set_xlabel("Episode")
-    axes[1].set_ylabel("Reward")
+    axes[0].set_title("Rolling reward")
+    axes[1].set_title("Raw reward (tabular only)")
+    axes[2].set_title("Success rate (tabular only)")
+    axes[3].set_title("Max position (tabular only)")
 
-    axes[2].set_title("Rolling success rate")
-    axes[2].set_xlabel("Episode")
-    axes[2].set_ylabel("Success probability")
-
-    axes[3].set_title("Rolling maximum position reached")
-    axes[3].set_xlabel("Episode")
-    axes[3].set_ylabel("Maximum position")
-
-    for axis in axes:
-        axis.grid(True, alpha=0.3)
+    for ax in axes:
+        ax.grid(True, alpha=0.3)
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=2, frameon=False)
-    fig.suptitle("Part 01 Training Dashboard", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
+
     fig.savefig(output_path, dpi=160, bbox_inches="tight")
     return fig, output_path
 
 
-def plot_discrete_policy_heatmaps(
-    artifacts: Dict[str, Dict[str, object]],
-    experiments: Iterable[ExperimentConfig] = None,
-    output_path: Path = None,
-):
-    """Visualise the greedy policies for the discrete-action experiments."""
-
+def plot_discrete_policy_heatmaps(artifacts, experiments=None, output_path=None):
     ensure_result_directories()
     if output_path is None:
         output_path = PLOTS_DIR / "discrete_policy_heatmaps.png"
 
     selected = [
-        config
-        for config in (experiments or PART01_EXPERIMENTS)
+        config for config in (experiments or PART01_EXPERIMENTS)
         if config.env_id == "MountainCar-v0"
+        and "q_table" in artifacts[config.slug]
     ]
 
-    fig, axes = plt.subplots(2, 2, figsize=(15, 11), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2, 2, figsize=(15, 11))
     axes = axes.ravel()
 
     for axis, config in zip(axes, selected):
-        q_table = artifacts[config.slug]["q_table"]
+        artifact = artifacts[config.slug]
+        q_table = artifact["q_table"]
         policy, _ = _policy_array(config, q_table)
-        image = axis.imshow(
-            policy.T,
-            origin="lower",
-            aspect="auto",
-            cmap="RdYlGn",
-            vmin=0,
-            vmax=2,
-        )
-        axis.set_title(config.title)
-        axis.set_xlabel("Position bin")
-        axis.set_ylabel("Velocity bin")
 
-    fig.colorbar(image, ax=axes, label="Action: 0=left, 1=idle, 2=right")
-    fig.suptitle("Discrete policy maps", fontsize=14)
-    fig.subplots_adjust(top=0.90, wspace=0.22, hspace=0.28)
-    fig.savefig(output_path, dpi=160, bbox_inches="tight")
+        im = axis.imshow(policy.T, origin="lower", aspect="auto", cmap="RdYlGn", vmin=0, vmax=2)
+        axis.set_title(config.title)
+
+    fig.colorbar(im, ax=axes)
+    fig.savefig(output_path, dpi=160)
     return fig, output_path
+
+
 
 
 def plot_continuous_policy_heatmap(
@@ -411,3 +391,107 @@ def generate_all_figures(
     )
     outputs["feature_importance"] = explanation["output_path"]
     return outputs
+
+def plot_sb3_phase_trajectories(artifacts, output_path=None):
+    ensure_result_directories()
+    if output_path is None:
+        output_path = PLOTS_DIR / "sb3_phase_trajectories.png"
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    for slug, artifact in artifacts.items():
+        if not _is_sb3_artifact(artifact):
+            continue
+
+        traj = collect_trajectory_sb3(
+            artifact["config"],
+            artifact["model"]
+        )
+
+        ax.plot(traj["position"], traj["velocity"], label=artifact["config"].title)
+
+    ax.set_title("SB3 Phase Trajectories")
+    ax.set_xlabel("Position")
+    ax.set_ylabel("Velocity")
+    ax.legend()
+    ax.grid(True)
+
+    fig.savefig(output_path, dpi=160)
+    return fig, output_path
+
+def plot_sb3_training_curves(artifacts, output_path=None):
+    ensure_result_directories()
+    if output_path is None:
+        output_path = PLOTS_DIR / "sb3_training_curves.png"
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    for slug, artifact in artifacts.items():
+        if "episode_rewards" not in artifact:
+            continue
+
+        rewards = np.array(artifact["episode_rewards"])
+        ax.plot(rolling_mean(rewards, 50), label=artifact["config"].title)
+
+    ax.set_title("SB3 Training Curves")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Reward")
+    ax.legend()
+    ax.grid(True)
+
+    fig.savefig(output_path, dpi=160)
+    return fig, output_path
+
+
+
+def plot_dqn_policy_heatmap(model, resolution=100):
+    positions = np.linspace(-1.2, 0.6, resolution)
+    velocities = np.linspace(-0.07, 0.07, resolution)
+
+    grid = np.zeros((resolution, resolution))
+
+    for i, p in enumerate(positions):
+        for j, v in enumerate(velocities):
+            obs = np.array([p, v])
+            action, _ = model.predict(obs, deterministic=True)
+            grid[i, j] = action
+
+    plt.imshow(grid.T, origin="lower")
+    plt.colorbar(label="Action")
+    plt.title("DQN Policy Heatmap")
+
+
+
+def plot_ppo_policy_heatmap(model, resolution=100):
+    positions = np.linspace(-1.2, 0.6, resolution)
+    velocities = np.linspace(-0.07, 0.07, resolution)
+
+    grid = np.zeros((resolution, resolution))
+
+    for i, p in enumerate(positions):
+        for j, v in enumerate(velocities):
+            obs = np.array([p, v])
+            action, _ = model.predict(obs, deterministic=True)
+            grid[i, j] = action
+
+    plt.imshow(grid.T, origin="lower", cmap="coolwarm")
+    plt.colorbar(label="Force")
+    plt.title("PPO Policy Heatmap")
+
+
+
+def plot_algorithm_comparison(summary_frame, output_path=None):
+    ensure_result_directories()
+    if output_path is None:
+        output_path = PLOTS_DIR / "algorithm_comparison.png"
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    summary_frame.groupby("slug")["mean_reward"].mean().plot(kind="bar", ax=ax)
+
+    ax.set_title("Algorithm Comparison")
+    ax.set_ylabel("Mean Reward")
+    ax.grid(True, axis="y")
+
+    fig.savefig(output_path, dpi=160)
+    return fig, output_path

@@ -22,7 +22,8 @@ class ExperimentConfig:
     title: str
     env_id: str
     algorithm: str
-    state_bins: Tuple[int, int]
+    # NOTE: None for neural-net agents (DQN, PPO) that operate on raw observations.
+    state_bins: Optional[Tuple[int, int]]
     episodes: int
     alpha: float = 0.1
     gamma: float = 0.99
@@ -38,6 +39,8 @@ class ExperimentConfig:
     eval_episodes: int = 150
     log_every: int = 250
     description: str = ""
+    is_sb3_agent: bool = False  
+    total_timesteps: int = 100_000
 
     @property
     def uses_discrete_actions(self) -> bool:
@@ -58,6 +61,9 @@ class ExperimentConfig:
 
 
 PART01_EXPERIMENTS: List[ExperimentConfig] = [
+    # ------------------------------------------------------------------
+    # Tabular baselines (unchanged)
+    # ------------------------------------------------------------------
     ExperimentConfig(
         slug="discrete_q_learning",
         title="Discrete MountainCar - Q-learning baseline",
@@ -133,6 +139,41 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
             "Continuous-action variant solved with a tabular controller over a "
             "discretised thrust set. Training uses energy/progress shaping, while "
             "evaluation is always reported on the native fuel-aware reward."
+        ),
+    ),
+    # ------------------------------------------------------------------
+    # Neural-net agents (SB3)
+    # ------------------------------------------------------------------
+    ExperimentConfig(
+        slug="discrete_dqn",
+        title="Discrete MountainCar - DQN",
+        env_id="MountainCar-v0",        # same discrete env as Q-learning / SARSA
+        algorithm="dqn",
+        state_bins=None,  
+        is_sb3_agent=True,             # raw (position, velocity) fed to the network
+        episodes=200_000,               # used as total_timesteps by SB3
+        training_wrapper="none",        # no shaping — fair comparison with tabular Q
+        description=(
+            "Deep Q-Network on the native discrete action space. Direct structural "
+            "comparison against tabular Q-learning: same environment and action set, "
+            "neural function approximation instead of a Q-table."
+        ),
+    ),
+    ExperimentConfig(
+        slug="continuous_ppo",
+        title="Continuous MountainCar - PPO",
+        env_id="MountainCarContinuous-v0",
+        algorithm="ppo",
+        state_bins=None,                 
+        is_sb3_agent=True,             # raw (position, velocity) fed to the network
+        episodes=300_000,               
+        training_wrapper="continuous_energy",
+        wrapper_kwargs={"energy_scale": 180.0, "progress_scale": 8.0},
+        description=(
+            "Proximal Policy Optimisation on the continuous action space. "
+            "Uses the same energy/progress reward shaping as the tabular continuous "
+            "baseline, enabling a direct comparison of tabular vs. policy-gradient "
+            "approaches on the same shaped objective."
         ),
     ),
 ]
