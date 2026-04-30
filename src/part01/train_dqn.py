@@ -43,12 +43,12 @@ def train_dqn(
         seed=seed,
         learning_rate=1e-3,
         buffer_size=50_000,
-        learning_starts=1_000,     # fill replay buffer before learning
+        learning_starts=1_000,     
         batch_size=64,
         gamma=0.99,
         target_update_interval=500,
-        exploration_fraction=0.3,  # fraction of training spent decaying epsilon
-        exploration_final_eps=0.05,
+        exploration_fraction=0.4,  
+        exploration_final_eps=0.02,
         train_freq=4,
     )
     model.learn(total_timesteps=total_timesteps, callback=callback)

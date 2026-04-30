@@ -39,7 +39,7 @@ class ExperimentConfig:
     eval_episodes: int = 150
     log_every: int = 250
     description: str = ""
-    is_sb3_agent: bool = False  
+    is_sb3_agent: bool = False
     total_timesteps: int = 100_000
 
     @property
@@ -147,13 +147,17 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
     ExperimentConfig(
         slug="discrete_dqn",
         title="Discrete MountainCar - DQN",
-        env_id="MountainCar-v0",        # same discrete env as Q-learning / SARSA
+        env_id="MountainCar-v0",
         algorithm="dqn",
-        state_bins=None,  
-        is_sb3_agent=True,             # raw (position, velocity) fed to the network
-        episodes=200_000,               # used as total_timesteps by SB3
-        total_timesteps=200_000,
-        training_wrapper="none",        # no shaping — fair comparison with tabular Q
+        state_bins=None,
+        is_sb3_agent=True,
+        episodes=300_000,
+        # FIX 1: Increased from 200k → 300k.
+        # With learning_starts=1_000 (train_dqn.py) the full budget is now
+        # used for learning. 200k was marginal; the idle boundary at high
+        # positions never tightened enough for reliable goal-reaching.
+        total_timesteps=300_000,
+        training_wrapper="none",
         description=(
             "Deep Q-Network on the native discrete action space. Direct structural "
             "comparison against tabular Q-learning: same environment and action set, "
@@ -165,17 +169,36 @@ PART01_EXPERIMENTS: List[ExperimentConfig] = [
         title="Continuous MountainCar - PPO",
         env_id="MountainCarContinuous-v0",
         algorithm="ppo",
-        state_bins=None,                 
-        is_sb3_agent=True,             # raw (position, velocity) fed to the network
-        episodes=300_000,               
-        total_timesteps=300_000,
+        state_bins=None,
+        is_sb3_agent=True,
+        episodes=500_000,
+        # FIX 2: Increased from 300k → 500k.
+        # PPO with n_steps=512 gives ~975 gradient updates at 500k steps,
+        # vs only ~146 updates at 300k with the old n_steps=2048. The extra
+        # budget is needed for the policy to discover and reinforce the
+        # oscillation strategy reliably.
+        total_timesteps=500_000,
         training_wrapper="continuous_energy",
-        wrapper_kwargs={"energy_scale": 180.0, "progress_scale": 8.0},
+        # FIX 3: Reduced energy_scale 180 → 50, progress_scale 8 → 2.
+        #
+        # The tabular agent tolerates aggressive shaping because epsilon-greedy
+        # forces uniform state coverage regardless of reward gradients.  PPO is
+        # on-policy: it immediately follows the dominant reward signal.
+        #
+        # At energy_scale=180 + progress_scale=8 the per-step shaped reward for
+        # any rightward action is always strongly positive, so PPO converges to
+        # "always apply max positive force" — the uniformly red heatmap.
+        #
+        # Reducing the scales keeps the shaping informative without drowning
+        # out the need to build leftward momentum first.  The tabular agent's
+        # wrapper_kwargs are left unchanged so the comparison remains valid at
+        # evaluation time (both are evaluated on the native objective reward).
+        wrapper_kwargs={"energy_scale": 50.0, "progress_scale": 2.0},
         description=(
             "Proximal Policy Optimisation on the continuous action space. "
-            "Uses the same energy/progress reward shaping as the tabular continuous "
-            "baseline, enabling a direct comparison of tabular vs. policy-gradient "
-            "approaches on the same shaped objective."
+            "Uses a lighter version of the energy/progress reward shaping to "
+            "guide exploration without collapsing the policy to max-right force. "
+            "Evaluation is always reported on the native fuel-aware reward."
         ),
     ),
 ]
